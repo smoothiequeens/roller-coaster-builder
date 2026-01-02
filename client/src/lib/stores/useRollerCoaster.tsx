@@ -130,43 +130,32 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
       }
       
       const loopRadius = 8;
-      const halfPoints = 10; // Points for each half of the loop
+      const totalLoopPoints = 20;
       const loopPoints: TrackPoint[] = [];
+      const helixSeparation = 3.0; // How far the exit is offset from entry
       
-      // Build ascending half (entry to top): θ from 0 to π
-      for (let i = 1; i <= halfPoints; i++) {
-        const t = i / halfPoints;
-        const theta = t * Math.PI;
+      // Compute right vector for corkscrew offset
+      const up = new THREE.Vector3(0, 1, 0);
+      const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+      
+      // Build helical loop: continuous corkscrew from θ=0 to θ=2π
+      // Lateral offset increases linearly throughout the loop
+      for (let i = 1; i <= totalLoopPoints; i++) {
+        const t = i / totalLoopPoints; // 0 to 1
+        const theta = t * Math.PI * 2; // 0 to 2π
         
         const forwardOffset = Math.sin(theta) * loopRadius;
         const verticalOffset = (1 - Math.cos(theta)) * loopRadius;
         
-        loopPoints.push({
-          id: `point-${++pointCounter}`,
-          position: new THREE.Vector3(
-            entryPos.x + forward.x * forwardOffset,
-            entryPos.y + verticalOffset,
-            entryPos.z + forward.z * forwardOffset
-          ),
-          tilt: 0
-        });
-      }
-      
-      // Build descending half - IDENTICAL mirror of ascending (no lateral offset)
-      // Go all the way to i=0 to close the loop properly at θ=2π
-      for (let i = halfPoints - 1; i >= 0; i--) {
-        const mirrorT = (halfPoints - i) / halfPoints;
-        const theta = Math.PI + mirrorT * Math.PI;
-        
-        const forwardOffset = Math.sin(theta) * loopRadius;
-        const verticalOffset = (1 - Math.cos(theta)) * loopRadius;
+        // Gradual corkscrew: lateral offset proportional to progress through loop
+        const lateralOffset = t * helixSeparation;
         
         loopPoints.push({
           id: `point-${++pointCounter}`,
           position: new THREE.Vector3(
-            entryPos.x + forward.x * forwardOffset,
+            entryPos.x + forward.x * forwardOffset + right.x * lateralOffset,
             entryPos.y + verticalOffset,
-            entryPos.z + forward.z * forwardOffset
+            entryPos.z + forward.z * forwardOffset + right.z * lateralOffset
           ),
           tilt: 0
         });
@@ -178,9 +167,7 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
       // Loop exit position (last point of loop) - same as entry position
       const loopExit = loopPoints[loopPoints.length - 1].position.clone();
       
-      // Compute right vector for separation in transition
-      const up = new THREE.Vector3(0, 1, 0);
-      const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+      // Use same right vector from loop generation for transition separation
       const exitSeparation = 3.0;
       const forwardSeparation = 2.0; // Also push exit forward to prevent intersection
       
