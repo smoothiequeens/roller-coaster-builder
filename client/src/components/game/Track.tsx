@@ -35,10 +35,20 @@ export function Track() {
     const railData: { point: THREE.Vector3; tilt: number; tangent: THREE.Vector3; normal: THREE.Vector3 }[] = [];
     const numSamples = Math.max(trackPoints.length * 20, 100);
     
-    // Smooth blended orientation: blend between world-up and transported-up
-    // based on how vertical the tangent is
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    let prevUp = worldUp.clone();
+    // Pure parallel transport: rotate the up vector along with the tangent changes
+    // This ensures smooth, continuous orientation through the entire track
+    let prevTangent = curve.getTangent(0).normalize();
+    
+    // Initialize up vector perpendicular to first tangent
+    let prevUp = new THREE.Vector3(0, 1, 0);
+    const initDot = prevUp.dot(prevTangent);
+    prevUp.sub(prevTangent.clone().multiplyScalar(initDot));
+    if (prevUp.length() < 0.01) {
+      prevUp.set(1, 0, 0);
+      const d = prevUp.dot(prevTangent);
+      prevUp.sub(prevTangent.clone().multiplyScalar(d));
+    }
+    prevUp.normalize();
     
     for (let i = 0; i <= numSamples; i++) {
       const t = i / numSamples;
@@ -46,38 +56,44 @@ export function Track() {
       const tangent = curve.getTangent(t).normalize();
       const tilt = interpolateTilt(trackPoints, t, isLooped);
       
-      // Compute world-up based orientation
-      const worldDot = worldUp.dot(tangent);
-      const worldBasedUp = worldUp.clone().sub(tangent.clone().multiplyScalar(worldDot));
-      const worldUpValid = worldBasedUp.length() > 0.1;
-      if (worldUpValid) worldBasedUp.normalize();
-      
-      // Compute transport-based orientation
-      const transportDot = prevUp.dot(tangent);
-      const transportedUp = prevUp.clone().sub(tangent.clone().multiplyScalar(transportDot));
-      const transportValid = transportedUp.length() > 0.01;
-      if (transportValid) transportedUp.normalize();
-      
       let up: THREE.Vector3;
       
-      if (worldUpValid && transportValid) {
-        // Blend based on how vertical the tangent is
-        // More vertical = more weight on transported up
-        const verticalness = Math.abs(tangent.y);
-        const blendFactor = Math.min(1, verticalness * 1.5); // 0 = world-up, 1 = transported
-        
-        up = worldBasedUp.clone().lerp(transportedUp, blendFactor).normalize();
-      } else if (worldUpValid) {
-        up = worldBasedUp;
-      } else if (transportValid) {
-        up = transportedUp;
+      if (i === 0) {
+        up = prevUp.clone();
       } else {
-        // Fallback
-        up = new THREE.Vector3(1, 0, 0);
-        const d = up.dot(tangent);
-        up.sub(tangent.clone().multiplyScalar(d)).normalize();
+        // Quaternion rotation from previous tangent to current tangent
+        const dot = Math.max(-1, Math.min(1, prevTangent.dot(tangent)));
+        
+        if (dot > 0.9999) {
+          // Nearly same direction
+          up = prevUp.clone();
+        } else if (dot < -0.9999) {
+          // Opposite direction - rotate 180 around the up vector
+          up = prevUp.clone();
+        } else {
+          // Normal case: rotate up by the same rotation that takes prevTangent to tangent
+          const axis = new THREE.Vector3().crossVectors(prevTangent, tangent);
+          if (axis.length() > 0.0001) {
+            axis.normalize();
+            const angle = Math.acos(dot);
+            const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+            up = prevUp.clone().applyQuaternion(quat);
+          } else {
+            up = prevUp.clone();
+          }
+        }
+        
+        // Re-orthogonalize to ensure up is perpendicular to tangent
+        const upDot = up.dot(tangent);
+        up.sub(tangent.clone().multiplyScalar(upDot));
+        if (up.length() > 0.001) {
+          up.normalize();
+        } else {
+          up = prevUp.clone();
+        }
       }
       
+      prevTangent.copy(tangent);
       prevUp.copy(up);
       
       // Derive normal (sideways) from tangent × up
