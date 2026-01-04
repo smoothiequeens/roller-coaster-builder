@@ -198,6 +198,13 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
       // Hermite-style transition: respect both loop exit direction and legacy track direction
       const transitionPoints: TrackPoint[] = [];
       
+      // First, add a point at the offset loop exit to bridge from loop end to the separated exit
+      transitionPoints.push({
+        id: `point-${++pointCounter}`,
+        position: offsetLoopExit.clone(),
+        tilt: 0
+      });
+      
       // We need to skip the immediate next point and target the one after to avoid S-curves
       const nextNextPoint = state.trackPoints[pointIndex + 2];
       const targetPoint = nextNextPoint || nextPoint;
@@ -219,12 +226,13 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
           // Direction the legacy track is heading
           legacyTangent = pointAfterTarget.position.clone().sub(targetPos).normalize();
         } else {
-          // No point after, just use direction from loop exit to target
-          legacyTangent = targetPos.clone().sub(loopExit).normalize();
+          // No point after, just use direction from offset loop exit to target
+          legacyTangent = targetPos.clone().sub(offsetLoopExit).normalize();
         }
         
-        // Cubic Hermite interpolation between loopExit and targetPos
-        const distance = loopExit.distanceTo(targetPos);
+        // Cubic Hermite interpolation between offsetLoopExit and targetPos
+        // Using offsetLoopExit ensures the curve starts from the properly separated exit point
+        const distance = offsetLoopExit.distanceTo(targetPos);
         const tangentScale = distance * 0.4; // Slightly reduced for smoother curve
         
         const hermite = (t: number): THREE.Vector3 => {
@@ -237,7 +245,7 @@ export const useRollerCoaster = create<RollerCoasterState>((set, get) => ({
           const h11 = t3 - t2;
           
           return new THREE.Vector3()
-            .addScaledVector(loopExit, h00)
+            .addScaledVector(offsetLoopExit, h00)
             .addScaledVector(exitTangent, h10 * tangentScale)
             .addScaledVector(targetPos, h01)
             .addScaledVector(legacyTangent, h11 * tangentScale);
